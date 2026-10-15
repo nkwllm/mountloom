@@ -1,0 +1,12 @@
+WinFsp - Windows File System Proxy
+Version: 2.2.26215 (WinFsp 2026 Beta4)
+Release: https://github.com/winfsp/winfsp/releases/tag/v2.2B4
+Original MSI: https://github.com/winfsp/winfsp/releases/download/v2.2B4/winfsp-2.2.26215.msi
+MSI SHA-256: 2ecb5c89405488a95bbd8a01875e02c48534fd37bbdfd84488f7590464d65944
+Corresponding source: https://github.com/winfsp/winfsp/tree/v2.2B4
+Source archive: https://github.com/winfsp/winfsp/archive/refs/tags/v2.2B4.zip
+Original license: https://github.com/winfsp/winfsp/blob/v2.2B4/License.txt
+
+The unmodified original MSI is embedded in the Mountloom installer. The original
+WinFsp license is reproduced in the adjacent LICENSE.txt file. WinFsp is a
+shared system component and is retained when Mountloom is uninstalled.

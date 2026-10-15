@@ -1,0 +1,45 @@
+# Build outputs and local tools
+bin/
+obj/
+.tools/
+artifacts/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Editor and machine-specific settings
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+AGENTS.md
+
+# Runtime data and credentials accidentally copied into the checkout
+*.log
+config.json
+config.json.bak
+rclone.conf
+rclone.conf.*
+*.dpapi
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+known_hosts
+known_hosts.*
+/Cache/
+/Logs/
+/Runtime/
+/credentials/
+/secrets/

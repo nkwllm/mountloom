@@ -1,0 +1,44 @@
+name: Windows build and tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Cache pinned build and packaging tools
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: windows-x64-sdk-10.0.402-${{ hashFiles('scripts/bootstrap.ps1', 'scripts/build-installer.ps1', 'global.json') }}
+      - name: Bootstrap, build and run isolated tests
+        shell: pwsh
+        run: ./scripts/build.ps1 -Configuration Release -Test
+      - name: Publish and verify bundled runtime
+        shell: pwsh
+        run: ./scripts/publish.ps1 -SkipTests
+      - name: Build offline installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -AppDirectory ./artifacts/Mountloom-win-x64
+      - name: Upload installer and portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mountloom-windows-x64
+          path: |
+            artifacts/Mountloom-Setup-x64.exe
+            artifacts/Mountloom-Setup-x64.exe.sha256
+            artifacts/Mountloom-Setup-x64.manifest.json
+            artifacts/Mountloom-win-x64.zip
+            artifacts/Mountloom-win-x64.zip.sha256
+          if-no-files-found: error
+      # Actual WinFsp drive mounting remains an explicit local integration test.

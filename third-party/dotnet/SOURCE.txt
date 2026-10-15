@@ -1,0 +1,35 @@
+Original .NET license and notice files, retrieved from fixed upstream version tags.
+Runtime, WPF and Windows Forms: 10.0.13; ProtectedData: 10.0.0.
+The SDK distribution terms are also preserved by scripts/publish.ps1.
+
+runtime/LICENSE.TXT
+Source: https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/LICENSE.TXT
+SHA-256: cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310
+
+runtime/THIRD-PARTY-NOTICES.TXT
+Source: https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/THIRD-PARTY-NOTICES.TXT
+SHA-256: 66f1d4e44973185519bb4aa8a9718eb22fc7af2cc532e3ae9cfc4c127ee7fc54
+
+wpf/LICENSE.TXT
+Source: https://raw.githubusercontent.com/dotnet/wpf/v10.0.13/LICENSE.TXT
+SHA-256: ae48df11a335dc1a615f4f938b69cba73bcf4485c4f97af49b38efb0f216353b
+
+wpf/THIRD-PARTY-NOTICES.TXT
+Source: https://raw.githubusercontent.com/dotnet/wpf/v10.0.13/THIRD-PARTY-NOTICES.TXT
+SHA-256: d23dba2fee20c6b59d8f7088ee9ed372459c952a319b7ca90f3eec370cc76eb9
+
+winforms/LICENSE.TXT
+Source: https://raw.githubusercontent.com/dotnet/winforms/v10.0.13/LICENSE.TXT
+SHA-256: ae48df11a335dc1a615f4f938b69cba73bcf4485c4f97af49b38efb0f216353b
+
+winforms/THIRD-PARTY-NOTICES.TXT
+Source: https://raw.githubusercontent.com/dotnet/winforms/v10.0.13/THIRD-PARTY-NOTICES.TXT
+SHA-256: 5a412b38efae0b162dc0893b319023f4cd14a8985a0f9f9ae01ac052b37a36eb
+
+protecteddata/LICENSE.TXT
+Source: https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/LICENSE.TXT
+SHA-256: cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310
+
+protecteddata/THIRD-PARTY-NOTICES.TXT
+Source: https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/THIRD-PARTY-NOTICES.TXT
+SHA-256: 66f1d4e44973185519bb4aa8a9718eb22fc7af2cc532e3ae9cfc4c127ee7fc54

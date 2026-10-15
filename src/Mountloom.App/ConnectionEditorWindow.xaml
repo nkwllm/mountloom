@@ -1,0 +1,75 @@
+<Window x:Class="Mountloom.App.ConnectionEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="连接设置" Height="740" Width="650" MinHeight="420" MinWidth="480"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Loaded="Window_Loaded" Closing="Window_Closing">
+    <Window.Resources>
+        <Style TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center" /></Style>
+        <Style TargetType="TextBox">
+            <Setter Property="MinHeight" Value="32" /><Setter Property="Margin" Value="0,4,0,12" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="PasswordBox"><Setter Property="MinHeight" Value="32" /><Setter Property="Margin" Value="0,4,0,12" /></Style>
+        <Style TargetType="ComboBox"><Setter Property="MinHeight" Value="32" /><Setter Property="Margin" Value="0,4,0,12" /></Style>
+        <Style TargetType="Button"><Setter Property="MinHeight" Value="34" /><Setter Property="Padding" Value="16,5" /></Style>
+        <Style TargetType="CheckBox"><Setter Property="Margin" Value="0,4,16,12" /></Style>
+        <Style TargetType="Expander"><Setter Property="Margin" Value="0,8,0,6" /></Style>
+    </Window.Resources>
+    <Grid Background="#F5F7FA">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <Border Background="White" Padding="22,18" BorderBrush="#DEE5EF" BorderThickness="0,0,0,1">
+            <StackPanel>
+                <TextBlock x:Name="EditorTitleText" Text="连接设置" FontSize="22" FontWeight="SemiBold" Foreground="#172033" />
+                <TextBlock Text="填写连接信息，点击保存后生效。" Foreground="#5D6B82" Margin="0,5,0,0" />
+            </StackPanel>
+        </Border>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Border Background="White" BorderBrush="#DEE5EF" BorderThickness="1" CornerRadius="8" Padding="18" Margin="18">
+                <StackPanel x:Name="EditorPanel">
+                    <TextBlock Text="名称" /><TextBox x:Name="NameBox" />
+                    <TextBlock Text="协议" /><ComboBox x:Name="ProtocolBox" SelectionChanged="ProtocolBox_SelectionChanged" />
+                    <TextBlock Text="盘符" /><ComboBox x:Name="DriveLetterBox" IsEditable="True" DropDownOpened="DriveLetterBox_DropDownOpened" />
+                    <TextBlock x:Name="HostLabel" Text="服务器地址" /><TextBox x:Name="HostBox" />
+                    <TextBlock x:Name="RemotePathLabel" Text="远程路径" /><TextBox x:Name="RemotePathBox" />
+                    <StackPanel x:Name="PortPanel"><TextBlock Text="端口（留空使用默认值）" /><TextBox x:Name="PortBox" /></StackPanel>
+                    <TextBlock x:Name="UsernameLabel" Text="用户名" /><TextBox x:Name="UsernameBox" />
+                    <StackPanel x:Name="SftpPanel">
+                        <TextBlock Text="SFTP 认证方式" /><ComboBox x:Name="SftpAuthenticationBox" SelectionChanged="SftpAuthenticationBox_SelectionChanged" />
+                        <StackPanel x:Name="SftpKeyPanel">
+                            <TextBlock Text="私钥文件" />
+                            <DockPanel><Button DockPanel.Dock="Right" Content="浏览" Click="BrowseSftpFile_Click" Tag="Key" Margin="8,4,0,12" /><TextBox x:Name="SftpKeyFileBox" /></DockPanel>
+                            <TextBlock Text="私钥口令（如有）" /><PasswordBox x:Name="SftpKeyPassphraseBox" />
+                        </StackPanel>
+                        <TextBlock Text="受信任的 known_hosts 文件" />
+                        <DockPanel><Button DockPanel.Dock="Right" Content="浏览" Click="BrowseSftpFile_Click" Tag="KnownHosts" Margin="8,4,0,12" /><TextBox x:Name="SftpKnownHostsFileBox" /></DockPanel>
+                    </StackPanel>
+                    <StackPanel x:Name="SecretPanel"><TextBlock x:Name="SecretLabel" Text="密码" /><PasswordBox x:Name="SecretBox" /></StackPanel>
+                    <StackPanel x:Name="S3Panel"><TextBlock Text="Region" /><TextBox x:Name="S3RegionBox" /><TextBlock Text="Endpoint（S3 兼容存储）" /><TextBox x:Name="S3EndpointBox" /></StackPanel>
+                    <WrapPanel><CheckBox x:Name="AutoMountBox" Content="应用启动后自动挂载" /><CheckBox x:Name="ReadOnlyBox" Content="只读" /></WrapPanel>
+                    <TextBlock x:Name="EditHintText" Foreground="#5D6B82" TextWrapping="Wrap" />
+                    <Expander Header="缓存与高级设置">
+                        <StackPanel Margin="0,10,0,0">
+                            <TextBlock Text="缓存模式" /><ComboBox x:Name="CacheModeBox" />
+                            <TextBlock Text="缓存容量上限（例如 10G）" /><TextBox x:Name="CacheSizeBox" />
+                            <TextBlock Text="磁盘最小剩余空间（例如 1G）" /><TextBox x:Name="CacheFreeSpaceBox" />
+                            <CheckBox x:Name="CustomCacheDirectoryBox" Content="使用自定义缓存目录" Checked="CustomCacheDirectoryBox_Changed" Unchecked="CustomCacheDirectoryBox_Changed" />
+                            <TextBox x:Name="CacheDirectoryBox" ToolTip="不勾选时使用应用默认缓存目录" />
+                            <TextBlock Text="附加 rclone 参数" /><TextBox x:Name="AdvancedArgumentsBox" MinHeight="64" TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top" />
+                            <TextBlock Text="已挂载连接的参数更改会在重新挂载后生效。卸载前请关闭正在使用此盘符的文件。" TextWrapping="Wrap" Foreground="#8A5500" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+        <Border Grid.Row="2" Background="White" BorderBrush="#DEE5EF" BorderThickness="0,1,0,0" Padding="22,14">
+            <StackPanel>
+                <TextBlock x:Name="EditorErrorText" Visibility="Collapsed" Foreground="#B42318" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.LiveSetting="Assertive" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="CancelButton" Content="取消" IsCancel="True" Margin="0,0,10,0" />
+                    <Button x:Name="SaveButton" Content="保存" IsDefault="True" Click="Save_Click" Background="#245FCC" Foreground="White" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
