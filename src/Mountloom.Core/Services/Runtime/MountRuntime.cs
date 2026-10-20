@@ -42,6 +42,12 @@ public interface IMountShellNotifier
     void NotifyDriveRemoved(string driveLetter);
 }
 
+/// <summary>The returned lease restores the previous icon after the mount releases its drive.</summary>
+public interface IMountDriveIconService
+{
+    IDisposable? Apply(string driveLetter);
+}
+
 public sealed record MountVfsStats(
     long? OpenFiles,
     long? UploadsQueued,

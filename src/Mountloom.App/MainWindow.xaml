@@ -1,8 +1,8 @@
 <Window x:Class="Mountloom.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Mountloom" Height="700" Width="980" MinHeight="540" MinWidth="780"
-        Loaded="Window_Loaded" Closing="Window_Closing" Closed="Window_Closed" StateChanged="Window_StateChanged">
+        Title="Mountloom" Icon="Assets/Mountloom.ico" Height="700" Width="980" MinHeight="540" MinWidth="780"
+        Closing="Window_Closing" Closed="Window_Closed" StateChanged="Window_StateChanged">
     <Window.Resources>
         <Style TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center" /></Style>
         <Style TargetType="TextBox">
@@ -75,7 +75,7 @@
                         <ScrollViewer MaxHeight="250" VerticalScrollBarVisibility="Auto">
                             <StackPanel Margin="0,10,0,0">
                                 <CheckBox x:Name="MinimizeToTrayBox" Content="关闭或最小化窗口时留在托盘，保持挂载" />
-                                <CheckBox x:Name="StartWithWindowsBox" Content="登录 Windows 时启动 Mountloom" Checked="StartWithWindowsBox_Changed" Unchecked="StartWithWindowsBox_Changed" />
+                                <CheckBox x:Name="StartWithWindowsBox" Content="登录 Windows 时启动 Mountloom（直接驻留托盘）" Checked="StartWithWindowsBox_Changed" Unchecked="StartWithWindowsBox_Changed" />
                                 <WrapPanel>
                                     <Button x:Name="DetectButton" Content="重新检查 / 修复" Click="DetectEnvironment_Click" />
                                     <Button x:Name="InstallWinFspButton" Content="安装 WinFsp" Click="InstallWinFsp_Click" />

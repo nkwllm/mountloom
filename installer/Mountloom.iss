@@ -34,6 +34,7 @@ Compression=lzma2
 SolidCompression=yes
 OutputBaseFilename=Mountloom-Setup-x64
 UninstallDisplayIcon={app}\Mountloom.App.exe
+SetupIconFile=..\src\Mountloom.App\Assets\Mountloom.ico
 SetupMutex=Global\Mountly-Setup
 CloseApplications=no
 RestartApplications=no
@@ -47,8 +48,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 chinesesimplified.Dependencies=安装内容包含 Mountloom、.NET 运行时和 rclone。缺少 WinFsp 时会自动安装随包驱动，无需手动配置程序路径。%n%nWinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos%nhttps://github.com/winfsp/winfsp
 english.Dependencies=Setup includes Mountloom, the .NET runtime and rclone. The bundled WinFsp driver is installed automatically when missing. No executable path configuration is required.%n%nWinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos%nhttps://github.com/winfsp/winfsp
-chinesesimplified.ActiveApplication=Mountloom、旧版 Mountly 或其挂载进程仍在运行。请在通知区域选择“退出并卸载”，等待上传完成后重试。
-english.ActiveApplication=Mountloom, an older Mountly version or one of its mount processes is still running. Choose Exit and unmount from the notification area and wait for pending uploads before retrying.
+chinesesimplified.ActiveApplication=Mountloom、旧版 Mountly 或其挂载进程仍在运行。请在主窗口选择“退出并卸载”或在托盘选择“静默退出”，等待上传与卸载完成后重试。
+english.ActiveApplication=Mountloom, an older Mountly version or one of its mount processes is still running. Exit from the main window or use Silent exit in the notification area, then wait for uploads and unmounting to finish before retrying.
 chinesesimplified.ProcessCheckFailed=无法检查正在运行的挂载进程。为保护待上传文件，本次操作已停止。请恢复 Windows Management Instrumentation 服务后重试。
 english.ProcessCheckFailed=Running mount processes could not be checked. Setup stopped to protect pending uploads. Restore the Windows Management Instrumentation service and retry.
 chinesesimplified.InstallingWinFsp=正在安装挂载所需的 WinFsp 驱动，请稍候…

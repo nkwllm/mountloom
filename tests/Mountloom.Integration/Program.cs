@@ -40,7 +40,7 @@ Process? server = null;
 var manager = new MountManager(options: new MountManagerOptions
 {
     StopTimeout = TimeSpan.FromSeconds(8), HealthInterval = TimeSpan.FromMilliseconds(500)
-});
+}, driveIcons: new NoOpDriveIcons());
 MountState? previousState = null;
 manager.StatusChanged += (_, status) =>
 {
@@ -153,4 +153,10 @@ async Task StopServerAsync()
     if (server is null) return;
     if (!server.HasExited) { server.Kill(entireProcessTree: true); await server.WaitForExitAsync(); }
     server.Dispose(); server = null;
+}
+
+// The integration harness exercises mounting, not the user's Explorer preferences.
+internal sealed class NoOpDriveIcons : IMountDriveIconService
+{
+    public IDisposable? Apply(string driveLetter) => null;
 }

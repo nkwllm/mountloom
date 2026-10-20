@@ -7,6 +7,7 @@ using System.Windows.Threading;
 using Mountloom.App;
 using Mountloom.Core.Configuration;
 using Mountloom.Core.Models;
+using Mountloom.Core.Services.Runtime;
 
 namespace Mountloom.Tests;
 
@@ -320,6 +321,193 @@ public sealed class EditorTests
 
     private static T Find<T>(FrameworkElement window, string name) => (T)window.FindName(name);
 
+    [Fact]
+    public Task SilentTrayExitSavesAndWaitsForUnmountWithoutShowingTheWindow() => OnSta(async () =>
+    {
+        using var files = new TemporaryConfig();
+        await files.Store.SaveAsync(files.CreateConfig());
+        var unmounting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var closed = false;
+        var shown = false;
+        var activated = false;
+        var notifications = new List<string>();
+        var window = new MainWindow(files.Store, enableTray: false, enablePersistentLogs: false);
+        window.Closed += (_, _) => closed = true;
+        window.IsVisibleChanged += (_, _) => shown |= window.IsVisible;
+        window.Activated += (_, _) => activated = true;
+        async Task StopMounts()
+        {
+            calls++;
+            Assert.False((await files.Store.LoadAsync()).App.MinimizeToTray);
+            unmounting.SetResult();
+            await release.Task;
+        }
+        try
+        {
+            await window.LoadConfigAsync();
+            Find<CheckBox>(window, "MinimizeToTrayBox").IsChecked = false;
+            var exiting = window.ExitFromTrayAsync(StopMounts, notifications.Add);
+            await unmounting.Task;
+            Assert.False(closed);
+            Assert.False(exiting.IsCompleted);
+            Assert.False(shown);
+            Assert.False(activated);
+            Assert.Equal(IntPtr.Zero, new System.Windows.Interop.WindowInteropHelper(window).Handle);
+            await window.ExitFromTrayAsync(StopMounts, notifications.Add);
+            Assert.Equal(1, calls);
+            release.SetResult();
+            await exiting;
+            Assert.True(closed);
+            Assert.False(shown);
+            Assert.False(activated);
+            Assert.Empty(notifications);
+        }
+        finally { release.TrySetResult(); if (!closed) CloseWithoutShowing(window); }
+    });
+
+    [Fact]
+    public Task SilentTrayExitDuringStartupCompletesInitializationWithoutShowingOrMounting() => OnSta(async () =>
+    {
+        using var files = new TemporaryConfig();
+        await files.Store.SaveAsync(files.CreateConfig());
+        var preparations = 0;
+        var window = new MainWindow(files.Store, false, enablePersistentLogs: false,
+            ensureRclone: _ => { preparations++; return Task.FromResult(@"C:\managed\rclone.exe"); });
+        var closed = false;
+        var shown = false;
+        var notifications = new List<string>();
+        window.Closed += (_, _) => closed = true;
+        window.IsVisibleChanged += (_, _) => shown |= window.IsVisible;
+        try
+        {
+            var initialization = window.InitializeAsync();
+            await window.ExitFromTrayAsync(() => Task.CompletedTask, notifications.Add);
+            Assert.True(initialization.IsCompletedSuccessfully);
+            Assert.True(closed);
+            Assert.False(shown);
+            Assert.Equal(0, preparations);
+            Assert.Empty(notifications);
+        }
+        finally { if (!closed) CloseWithoutShowing(window); }
+    });
+
+    [Fact]
+    public Task SilentTrayExitPreservesUnsavedChangesAndNotifiesWithoutUnmounting() => OnSta(async () =>
+    {
+        using var files = new TemporaryConfig();
+        await files.Store.SaveAsync(files.CreateConfig());
+        var failSave = true;
+        Task Save(MountloomConfig config) => failSave
+            ? Task.FromException(new IOException("Simulated full disk."))
+            : files.Store.SaveAsync(config);
+        var window = new MainWindow(files.Store, enableTray: false, Save, enablePersistentLogs: false);
+        var notifications = new List<string>();
+        var unmounts = 0;
+        var closed = false;
+        var shown = false;
+        window.Closed += (_, _) => closed = true;
+        window.IsVisibleChanged += (_, _) => shown |= window.IsVisible;
+        try
+        {
+            await window.LoadConfigAsync();
+            Find<CheckBox>(window, "MinimizeToTrayBox").IsChecked = false;
+            await window.ExitFromTrayAsync(() => { unmounts++; return Task.CompletedTask; }, notifications.Add);
+            Assert.Contains("配置未能保存", Assert.Single(notifications));
+            Assert.Equal(0, unmounts);
+            Assert.False(closed);
+            Assert.False(shown);
+            Assert.Equal(IntPtr.Zero, new System.Windows.Interop.WindowInteropHelper(window).Handle);
+            Assert.False(Find<CheckBox>(window, "MinimizeToTrayBox").IsChecked);
+            Assert.True((await files.Store.LoadAsync()).App.MinimizeToTray);
+            failSave = false;
+            await window.ExitFromTrayAsync(() => { unmounts++; return Task.CompletedTask; }, notifications.Add);
+            Assert.True(closed);
+            Assert.Equal(1, unmounts);
+            Assert.Single(notifications);
+            Assert.False(shown);
+            Assert.False((await files.Store.LoadAsync()).App.MinimizeToTray);
+        }
+        finally { if (!closed) CloseWithoutShowing(window); }
+    });
+
+    [Fact]
+    public Task SilentTrayExitKeepsAnOpenConnectionDraftWithoutActivatingEitherWindow() => OnSta(async () =>
+    {
+        using var files = new TemporaryConfig();
+        await files.Store.SaveAsync(files.CreateConfig());
+        var window = new MainWindow(files.Store, enableTray: false, enablePersistentLogs: false);
+        ConnectionEditorWindow? editor = null;
+        var editorField = typeof(MainWindow).GetField("_connectionEditor", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var notifications = new List<string>();
+        var closed = false;
+        var activated = false;
+        var unmounts = 0;
+        window.Closed += (_, _) => closed = true;
+        window.Activated += (_, _) => activated = true;
+        try
+        {
+            await window.LoadConfigAsync();
+            editor = window.CreateConnectionEditor((ConnectionRow)Find<DataGrid>(window, "ConnectionsGrid").SelectedItem);
+            editor.Activated += (_, _) => activated = true;
+            Find<TextBox>(editor, "NameBox").Text = "Unsaved draft";
+            editorField.SetValue(window, editor);
+            await window.ExitFromTrayAsync(() => { unmounts++; return Task.CompletedTask; }, notifications.Add);
+            Assert.Contains("仍在编辑", Assert.Single(notifications));
+            Assert.False(closed);
+            Assert.False(activated);
+            Assert.False(window.IsVisible);
+            Assert.False(editor.IsVisible);
+            Assert.Equal(IntPtr.Zero, new System.Windows.Interop.WindowInteropHelper(window).Handle);
+            Assert.Equal(IntPtr.Zero, new System.Windows.Interop.WindowInteropHelper(editor).Handle);
+            Assert.Equal(0, unmounts);
+            Assert.Equal("Unsaved draft", Find<TextBox>(editor, "NameBox").Text);
+            Assert.Equal("Alpha", (await files.Store.LoadAsync()).Connections[0].Name);
+        }
+        finally { editorField.SetValue(window, null); editor?.Close(); CloseWithoutShowing(window); }
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task SilentTrayExitCancelsOnUnmountFailureAndCanBeRetriedWithoutShowingTheWindow(bool needsConfirmation) => OnSta(async () =>
+    {
+        using var files = new TemporaryConfig();
+        await files.Store.SaveAsync(files.CreateConfig());
+        var window = new MainWindow(files.Store, enableTray: false, enablePersistentLogs: false);
+        var closed = false;
+        var shown = false;
+        var attempts = 0;
+        var notifications = new List<string>();
+        window.Closed += (_, _) => closed = true;
+        window.IsVisibleChanged += (_, _) => shown |= window.IsVisible;
+        Task StopMounts()
+        {
+            if (++attempts > 1) return Task.CompletedTask;
+            Exception error = needsConfirmation
+                ? new AggregateException(new UnmountSafetyConfirmationRequiredException("alpha", "X:", "Open files cannot be checked."))
+                : new IOException("Uploads are still pending.");
+            return Task.FromException(error);
+        }
+        try
+        {
+            await window.LoadConfigAsync();
+            await window.ExitFromTrayAsync(StopMounts, notifications.Add);
+            Assert.False(closed);
+            Assert.False(shown);
+            Assert.Equal(IntPtr.Zero, new System.Windows.Interop.WindowInteropHelper(window).Handle);
+            Assert.Equal(1, attempts);
+            Assert.Contains(needsConfirmation ? "X: 需要确认文件已关闭" : "Uploads are still pending", Assert.Single(notifications));
+            await window.ExitFromTrayAsync(StopMounts, notifications.Add);
+            Assert.True(closed);
+            Assert.False(shown);
+            Assert.Equal(2, attempts);
+            Assert.Single(notifications);
+        }
+        finally { if (!closed) CloseWithoutShowing(window); }
+    });
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -530,6 +718,46 @@ public sealed class EditorTests
             Assert.Equal("{broken", await File.ReadAllTextAsync(files.Store.ConfigPath));
         }
         finally { CloseWithoutShowing(window); }
+    });
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public Task HiddenStartupInitializesAndMountsOnceWithoutLoadingTheWindow(bool minimizeToTray) => OnSta(async () =>
+    {
+        using var files = new TemporaryConfig();
+        var config = files.CreateConfig();
+        config.App.MinimizeToTray = minimizeToTray;
+        config.Connections[0].AutoMount = true;
+        await files.Store.SaveAsync(config);
+        var preparations = 0;
+        var mounts = new List<string>();
+        var window = new MainWindow(files.Store, false, enablePersistentLogs: false,
+            ensureRclone: _ => { preparations++; return Task.FromResult(@"C:\managed\rclone.exe"); },
+            detectEnvironment: (path, _) => Task.FromResult(ReadyEnvironment(path, true)),
+            mount: (connection, _, _) => { mounts.Add(connection.Id); return Task.CompletedTask; });
+        var becameVisible = false;
+        window.IsVisibleChanged += (_, _) => becameVisible |= window.IsVisible;
+        try
+        {
+            var startup = window.InitializeAsync();
+            Assert.Same(startup, window.InitializeAsync());
+            await startup;
+            Assert.False(becameVisible);
+            Assert.False(window.IsVisible);
+            Assert.False(window.IsLoaded);
+            Assert.Equal(IntPtr.Zero, new System.Windows.Interop.WindowInteropHelper(window).Handle);
+            Assert.Equal(minimizeToTray, Find<CheckBox>(window, "MinimizeToTrayBox").IsChecked);
+            Assert.Equal([config.Connections[0].Id], mounts);
+
+            var grid = Find<DataGrid>(window, "ConnectionsGrid");
+            var row = Assert.IsType<ConnectionRow>(grid.Items[0]);
+            await window.InitializeAsync();
+            Assert.Same(row, grid.Items[0]);
+            Assert.Equal(1, preparations);
+            Assert.Single(mounts);
+        }
+        finally { await window.CancelDependencyWorkAsync(); CloseWithoutShowing(window); }
     });
 
     [Fact]

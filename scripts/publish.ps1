@@ -76,6 +76,7 @@ try {
         rcloneSha256 = (Get-FileHash -LiteralPath (Join-Path $stageApp 'rclone.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
         applicationSha256 = (Get-FileHash -LiteralPath (Join-Path $stageApp 'Mountloom.App.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
         coreSha256 = (Get-FileHash -LiteralPath (Join-Path $stageApp 'Mountloom.Core.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+        iconSha256 = (Get-FileHash -LiteralPath (Join-Path $stageApp 'Mountloom.ico') -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     [IO.File]::WriteAllText((Join-Path $stageApp 'build-manifest.json'), ($manifest | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
     & (Join-Path $PSScriptRoot 'test-package.ps1') -AppDirectory $stageApp

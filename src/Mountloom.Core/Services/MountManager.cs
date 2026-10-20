@@ -13,6 +13,7 @@ public sealed class MountManager
     private readonly IMountProcessFactory _processFactory;
     private readonly IMountProbe _probe;
     private readonly IMountShellNotifier _shellNotifier;
+    private readonly IMountDriveIconService _driveIcons;
     private readonly IMountControlFactory _controlFactory;
     private readonly MountManagerOptions _options;
     private readonly Func<MountConnection, AppSettings, CancellationToken, Task<RcloneLaunchConfiguration>> _configure;
@@ -22,11 +23,12 @@ public sealed class MountManager
     public MountManager(IMountProcessFactory? processFactory = null, IMountProbe? probe = null,
         IMountControlFactory? controlFactory = null, MountManagerOptions? options = null,
         Func<MountConnection, AppSettings, CancellationToken, Task<RcloneLaunchConfiguration>>? configure = null,
-        IMountShellNotifier? shellNotifier = null)
+        IMountShellNotifier? shellNotifier = null, IMountDriveIconService? driveIcons = null)
     {
         _processFactory = processFactory ?? new SystemMountProcessFactory();
         _probe = probe ?? new WindowsMountProbe();
         _shellNotifier = shellNotifier ?? new WindowsMountShellNotifier();
+        _driveIcons = driveIcons ?? new WindowsMountDriveIconService();
         _controlFactory = controlFactory ?? new RcloneMountControlFactory();
         _options = options ?? new MountManagerOptions();
         _configure = configure ?? ((connection, settings, token) =>
@@ -178,6 +180,21 @@ public sealed class MountManager
             {
                 throw new AggregateException("Some mounts could not be stopped safely. They remain managed by Mountloom.", errors);
             }
+            // A previous stop may have observed process exit before Windows released
+            // its letter. Do not report a successful retry until its icon is restored.
+            using var release = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            release.CancelAfter(_options.DriveReleaseTimeout);
+            try
+            {
+                while (GetReservedDriveLetters().Count != 0)
+                {
+                    await Task.Delay(_options.PollInterval, release.Token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new InvalidOperationException("Windows drive release or drive icon restoration is still pending. Wait for the drive to disappear, then retry exiting Mountloom.");
+            }
         }
         finally
         {
@@ -240,6 +257,11 @@ public sealed class MountManager
             token.ThrowIfCancellationRequested();
             session.Ready = true;
             session.MountedAt = DateTimeOffset.Now;
+            try { session.DriveIcon = _driveIcons.Apply(session.Connection.DriveLetter); }
+            catch (Exception iconError)
+            {
+                AppendLog(session, new ProcessLogLine("Could not set the mounted drive icon: " + Redact(session, iconError.Message), true));
+            }
             SetStatus(session, MountState.Mounted, string.Empty);
             session.Started.TrySetResult();
             _ = MonitorHealthAsync(session);
@@ -525,9 +547,12 @@ public sealed class MountManager
             if (_sessions.TryGetValue(session.Connection.Id, out var current) && ReferenceEquals(current, session))
             {
                 _sessions.Remove(session.Connection.Id);
-                _driveOwners.Remove(session.Connection.DriveLetter);
+                // Retain the reservation while a late Windows drive release still
+                // owns its icon, so a new mount cannot race the restoration.
+                if (session.DriveIcon is null) { _driveOwners.Remove(session.Connection.DriveLetter); }
             }
         }
+        if (session.DriveIcon is not null) { _ = RestoreIconAfterDriveReleaseAsync(session); }
     }
 
     private void NotifyReleasedDrive(Session session)
@@ -538,6 +563,7 @@ public sealed class MountManager
             // startup. Keep the drive reserved until this check and notification finish.
             if (!session.ProcessStarted || session.Process is not { HasExited: true } ||
                 session.ShellRemovalNotified || _probe.IsDrivePresent(session.Connection.DriveLetter)) { return; }
+            RestoreDriveIcon(session);
             session.ShellRemovalNotified = true;
             _shellNotifier.NotifyDriveRemoved(session.Connection.DriveLetter);
         }
@@ -545,6 +571,40 @@ public sealed class MountManager
         {
             // A shell refresh is best effort and must never prevent process cleanup.
             AppendLog(session, new ProcessLogLine("Could not refresh Explorer after drive removal: " + Redact(session, ex.Message), true));
+        }
+    }
+
+    private void RestoreDriveIcon(Session session)
+    {
+        session.DriveIcon?.Dispose();
+        session.DriveIcon = null;
+    }
+
+    private async Task RestoreIconAfterDriveReleaseAsync(Session session)
+    {
+        // A driver can release the letter after our bounded unmount wait expires.
+        // Keep the icon until that actually happens; never touch the mount itself.
+        while (session.DriveIcon is not null)
+        {
+            await Task.Delay(_options.PollInterval).ConfigureAwait(false);
+            try
+            {
+                if (_probe.IsDrivePresent(session.Connection.DriveLetter)) { continue; }
+                RestoreDriveIcon(session);
+                if (!session.ShellRemovalNotified)
+                {
+                    session.ShellRemovalNotified = true;
+                    _shellNotifier.NotifyDriveRemoved(session.Connection.DriveLetter);
+                }
+            }
+            catch { /* Keep the original icon snapshot and retry after transient registry/probe errors. */ }
+        }
+        lock (_sync)
+        {
+            if (_driveOwners.GetValueOrDefault(session.Connection.DriveLetter) == session.Connection.Id)
+            {
+                _driveOwners.Remove(session.Connection.DriveLetter);
+            }
         }
     }
 
@@ -651,6 +711,7 @@ public sealed class MountManager
         public Task ExitTask { get; set; } = Task.CompletedTask;
         public IMountProcess? Process { get; set; }
         public IMountControl? Control { get; set; }
+        public IDisposable? DriveIcon { get; set; }
         public bool ProcessStarted { get; set; }
         public bool Ready { get; set; }
         public DateTimeOffset? MountedAt { get; set; }

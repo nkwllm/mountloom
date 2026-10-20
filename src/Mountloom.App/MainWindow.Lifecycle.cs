@@ -8,6 +8,7 @@ namespace Mountloom.App;
 public partial class MainWindow
 {
     private Forms.NotifyIcon? _trayIcon;
+    private System.Drawing.Icon? _trayImage;
     private readonly CancellationTokenSource _windowLifetime = new();
     private bool _allowClose;
     private bool _trayHintShown;
@@ -32,18 +33,29 @@ public partial class MainWindow
                 menu.Items.Add(entry);
             }
             menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("退出并卸载", null, (_, _) => Dispatcher.BeginInvoke(new Action(async () => await ExitApplicationAsync())));
+            var exit = menu.Items.Add("静默退出", null, (_, _) => Dispatcher.BeginInvoke(new Action(async () => await ExitFromTrayAsync())));
+            exit.Enabled = !_shuttingDown;
+            exit.ToolTipText = "正常卸载后退出，不弹出窗口；需要处理时保留运行并通过托盘提示。";
         };
+        using (var resource = Application.GetResourceStream(new Uri("pack://application:,,,/Mountloom.App;component/Assets/Mountloom.ico"))!.Stream)
+        using (var icon = new System.Drawing.Icon(resource, Forms.SystemInformation.SmallIconSize))
+            _trayImage = (System.Drawing.Icon)icon.Clone();
         _trayIcon = new Forms.NotifyIcon
         {
-            Text = "Mountloom", Icon = System.Drawing.SystemIcons.Application,
+            Text = "Mountloom", Icon = _trayImage,
             ContextMenuStrip = menu, Visible = true
         };
         _trayIcon.DoubleClick += (_, _) => Dispatcher.BeginInvoke(new Action(ShowFromTray));
+        _trayIcon.BalloonTipClicked += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            ShowFromTray();
+            _connectionEditor?.Activate();
+        }));
     }
 
     private void ShowFromTray()
     {
+        if (_allowClose || Dispatcher.HasShutdownStarted) return;
         Show();
         WindowState = WindowState.Normal;
         Activate();
@@ -74,22 +86,34 @@ public partial class MainWindow
 
     private async void Exit_Click(object sender, RoutedEventArgs e) => await ExitApplicationAsync();
 
-    private async Task ExitApplicationAsync()
+    internal Task ExitFromTrayAsync(Func<Task>? stopMounts = null, Action<string>? notify = null) =>
+        ExitApplicationAsync(silent: true, stopMounts, notify);
+
+    private async Task ExitApplicationAsync(bool silent = false, Func<Task>? stopMounts = null, Action<string>? notify = null)
     {
-        if (_connectionEditor is not null) { _connectionEditor.Activate(); return; }
         if (_shuttingDown) return;
-        ShowFromTray();
+        if (_connectionEditor is not null)
+        {
+            if (silent) ReportSilentExitCancelled("连接设置仍在编辑，请先保存或关闭编辑窗口。", notify);
+            else _connectionEditor.Activate();
+            return;
+        }
+        if (!silent) ShowFromTray();
         _shuttingDown = true;
         _autoSaveTimer.Stop();
         UpdateControls();
         try
         {
             await CancelPendingWorkAsync();
-            if (!await SaveBeforeExitAsync(() => MessageBox.Show(this,
+            if (!await SaveBeforeExitAsync(() => !silent && MessageBox.Show(this,
                     "配置未能保存。是否放弃未保存的更改并继续退出？\n\n选择“否”返回编辑。继续退出仍会先正常卸载磁盘，不会强制中断上传。",
                     "未保存的更改", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes))
+            {
+                if (silent) ReportSilentExitCancelled("配置未能保存，未保存的更改已保留，请先处理保存问题。", notify);
                 return;
-            if (!await StopAllWithConfirmationAsync()) return;
+            }
+            if (silent) await (stopMounts ?? (() => _mountManager.StopAllAsync()))();
+            else if (!await StopAllWithConfirmationAsync()) return;
             _windowLifetime.Cancel();
             if (_logWriter is not null) await _logWriter.DisposeAsync();
             _allowClose = true;
@@ -97,8 +121,19 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            AppendLog($"退出已取消：{ex.Message}");
-            MessageBox.Show(this, ex.Message, "退出已取消", MessageBoxButton.OK, MessageBoxImage.Error);
+            if (silent)
+            {
+                var confirmations = GetSafetyConfirmations(ex);
+                var reason = confirmations.Length > 0
+                    ? $"{string.Join("、", confirmations.Select(error => error.DriveLetter).Distinct())} 需要确认文件已关闭，请在主窗口完成卸载后重试。"
+                    : $"未能完成正常退出：{ex.Message}";
+                ReportSilentExitCancelled(reason, notify);
+            }
+            else
+            {
+                AppendLog($"退出已取消：{ex.Message}");
+                MessageBox.Show(this, ex.Message, "退出已取消", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
         finally
         {
@@ -112,6 +147,13 @@ public partial class MainWindow
         }
     }
 
+    private void ReportSilentExitCancelled(string reason, Action<string>? notify)
+    {
+        AppendLog($"静默退出已取消：{reason}");
+        if (notify is not null) notify(reason);
+        else _trayIcon?.ShowBalloonTip(5000, "Mountloom 仍在运行", $"{reason}\n点击此通知打开窗口。", Forms.ToolTipIcon.Warning);
+    }
+
     internal async Task CancelPendingWorkAsync()
     {
         // A dependency installation can be awaiting its deferred startup mounts.
@@ -121,6 +163,8 @@ public partial class MainWindow
         var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
         while (_operations.Count > 0 && DateTimeOffset.UtcNow < deadline) await Task.Delay(50);
         if (_operations.Count > 0) throw new InvalidOperationException("操作仍在停止中，请稍后再次退出。");
+        // Initial config loading can recover or migrate files; let that work finish before closing.
+        if (_initializationTask is not null) await _initializationTask;
     }
 
     internal async Task<bool> SaveBeforeExitAsync(Func<bool> confirmDiscard)
@@ -169,6 +213,7 @@ public partial class MainWindow
         _rcloneRuntime.ProgressChanged -= OnDependencyProgress;
         _trayIcon?.ContextMenuStrip?.Dispose();
         _trayIcon?.Dispose();
+        _trayImage?.Dispose();
         _windowLifetime.Dispose();
     }
 }

@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     private bool _shuttingDown;
     private long _editVersion;
     private long _savedVersion;
+    private Task? _initializationTask;
 
     public MainWindow() : this(new ConfigStore(), true) { }
 
@@ -69,14 +70,21 @@ public partial class MainWindow : Window
         UpdateControls();
     }
 
-    private async void Window_Loaded(object sender, RoutedEventArgs e)
+    internal Task InitializeAsync() => _initializationTask ??= InitializeCoreAsync();
+
+    private async Task InitializeCoreAsync()
     {
+        // Initialization also runs while the window has never been shown.
+        await Task.Yield();
+        if (_shuttingDown) return;
         try { await LoadConfigAsync(); }
         catch (Exception ex)
         {
+            if (_shuttingDown) return;
             _configReady = false;
             SaveStatusText.Text = "配置加载失败，已停止保存";
             AppendLog($"配置加载失败：{ex.Message}");
+            ShowFromTray();
             MessageBox.Show(this, $"无法安全加载配置，已停止保存。请检查或恢复配置后重新启动。\n\n{ex.Message}",
                 "配置加载失败", MessageBoxButton.OK, MessageBoxImage.Error);
             UpdateControls();
@@ -93,6 +101,7 @@ public partial class MainWindow : Window
         try
         {
             _config = await _configStore.LoadAsync();
+            if (_shuttingDown) return;
             if (_enablePersistentLogs)
             {
                 if (_logWriter is not null) await _logWriter.DisposeAsync();

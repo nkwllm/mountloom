@@ -43,7 +43,7 @@ if ([string]::IsNullOrWhiteSpace($AppDirectory)) {
 }
 $app = Assert-MountloomChildPath (Resolve-Path -LiteralPath $AppDirectory).Path
 foreach ($name in @('Mountloom.App.exe', 'Mountloom.App.dll', 'Mountloom.App.runtimeconfig.json',
-        'hostfxr.dll', 'hostpolicy.dll', 'coreclr.dll', 'PresentationFramework.dll', 'rclone.exe',
+        'hostfxr.dll', 'hostpolicy.dll', 'coreclr.dll', 'PresentationFramework.dll', 'rclone.exe', 'Mountloom.ico',
         'build-manifest.json', 'LICENSE', 'third-party/rclone/LICENSE.txt', 'third-party/dotnet/LICENSE.txt')) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $name) -PathType Leaf)) {
         throw "The application directory is not a complete self-contained publication: missing $name. Run scripts/publish.ps1."
@@ -100,6 +100,7 @@ try {
         winFspBundled = $true; winFsp = $winFspVersion; winFspRelease = 'v2.2B4'
         winFspSha256 = $winFspHash; compiler = "Inno Setup $innoVersion"
         appAssemblySha256 = (Get-FileHash -LiteralPath (Join-Path $app 'Mountloom.App.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+        iconSha256 = (Get-FileHash -LiteralPath (Join-Path $app 'Mountloom.ico') -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     $manifestPath = Join-Path $stage 'installer-manifest.json'
     [IO.File]::WriteAllText($manifestPath, ($installerManifest | ConvertTo-Json), [Text.UTF8Encoding]::new($false))

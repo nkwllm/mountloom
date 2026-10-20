@@ -9,6 +9,62 @@ namespace Mountloom.Tests;
 public sealed class MountManagerTests
 {
     [Fact]
+    public async Task DriveIconIsAppliedOnlyAfterReadyAndRestoredWhileLetterIsStillReserved()
+    {
+        using var fixture = new Fixture { CreateDriveOnStart = false };
+        var manager = fixture.CreateManager();
+        var mounting = manager.MountAsync(fixture.Connection, fixture.Settings);
+        await WaitForAsync(() => fixture.Processes.Count != 0);
+        Assert.Empty(fixture.DriveIcons.Applied);
+        fixture.Probe.Drives.Add("X:");
+        await mounting;
+        Assert.Equal(["X:"], fixture.DriveIcons.Applied);
+        fixture.DriveIcons.OnRestore = drive =>
+        {
+            Assert.True(fixture.Processes[0].HasExited);
+            Assert.False(fixture.Probe.IsDrivePresent(drive));
+            Assert.Contains(drive, manager.GetReservedDriveLetters());
+        };
+        await manager.UnmountAsync(fixture.Connection.Id);
+        Assert.Equal(["X:"], fixture.DriveIcons.Restored);
+        Assert.Empty(manager.GetReservedDriveLetters());
+    }
+
+    [Fact]
+    public async Task IconFailureDoesNotFailSuccessfulMountOrUnmount()
+    {
+        using var fixture = new Fixture();
+        fixture.DriveIcons.ApplyFailure = new IOException("icon unavailable");
+        var manager = fixture.CreateManager();
+        var logs = new List<string>();
+        manager.LogReceived += (_, line) => logs.Add(line);
+        await manager.MountAsync(fixture.Connection, fixture.Settings);
+        Assert.Equal(MountState.Mounted, manager.GetStatus(fixture.Connection.Id).State);
+        Assert.Contains(logs, line => line.Contains("Could not set the mounted drive icon"));
+        await manager.UnmountAsync(fixture.Connection.Id);
+        Assert.Empty(manager.GetReservedDriveLetters());
+    }
+
+    [Fact]
+    public async Task StopAllRetryWaitsForDeferredDriveReleaseAndIconRestoration()
+    {
+        using var fixture = new Fixture { KeepDriveOnExit = true };
+        var manager = fixture.CreateManager();
+        await manager.MountAsync(fixture.Connection, fixture.Settings);
+        await Assert.ThrowsAsync<AggregateException>(() => manager.StopAllAsync());
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => manager.StopAllAsync());
+        Assert.Contains("drive icon restoration is still pending", error.Message);
+        Assert.Empty(fixture.DriveIcons.Restored);
+        Assert.Contains("X:", manager.GetReservedDriveLetters());
+
+        fixture.Probe.Drives.Clear();
+        await manager.StopAllAsync();
+        Assert.Equal(["X:"], fixture.DriveIcons.Restored);
+        Assert.Empty(manager.GetReservedDriveLetters());
+    }
+
+    [Fact]
     public async Task CancelledUnmountWaiterDoesNotLeaveConnectionMarkedStopping()
     {
         using var fixture = new Fixture();
@@ -260,8 +316,10 @@ public sealed class MountManagerTests
         Assert.Equal(3, manager.GetStatus(fixture.Connection.Id).PendingUploads);
         Assert.Single(manager.GetReservedDriveLetters());
         Assert.Empty(fixture.ShellNotifier.RemovedDrives);
+        Assert.Empty(fixture.DriveIcons.Restored);
         await manager.UnmountAsync(fixture.Connection.Id, force: true);
         Assert.Equal(1, fixture.Processes[0].KillCount);
+        Assert.Equal(["X:"], fixture.DriveIcons.Restored);
     }
 
     [Fact]
@@ -378,6 +436,7 @@ public sealed class MountManagerTests
         await WaitForAsync(() => manager.GetStatus(fixture.Connection.Id).State == MountState.Failed);
         Assert.Equal(1, oldProcess.DisposeCount);
         Assert.Equal(["X:"], fixture.ShellNotifier.RemovedDrives);
+        Assert.Equal(["X:"], fixture.DriveIcons.Restored);
         await manager.MountAsync(fixture.Connection, fixture.Settings);
         Assert.Equal(fixture.Processes[1].Id, manager.GetStatus(fixture.Connection.Id).ProcessId);
         Assert.Equal(["X:"], fixture.ShellNotifier.RemovedDrives);
@@ -465,7 +524,13 @@ public sealed class MountManagerTests
         Assert.Equal(MountState.Failed, manager.GetStatus(fixture.Connection.Id).State);
         Assert.Equal(1, fixture.Processes[0].DisposeCount);
         Assert.Empty(fixture.ShellNotifier.RemovedDrives);
+        Assert.Empty(fixture.DriveIcons.Restored);
+        Assert.Contains("X:", manager.GetReservedDriveLetters());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.MountAsync(fixture.Connection, fixture.Settings));
         fixture.Probe.Drives.Clear();
+        await WaitForAsync(() => manager.GetReservedDriveLetters().Count == 0);
+        Assert.Equal(["X:"], fixture.DriveIcons.Restored);
+        Assert.Equal(["X:"], fixture.ShellNotifier.RemovedDrives);
     }
 
     [Fact]
@@ -497,6 +562,7 @@ public sealed class MountManagerTests
         public AppSettings Settings { get; }
         public FakeProbe Probe { get; } = new();
         public FakeShellNotifier ShellNotifier { get; } = new();
+        public FakeDriveIcons DriveIcons { get; } = new();
         public List<FakeProcess> Processes { get; } = [];
         public List<FakeControl> Controls { get; } = [];
         public bool CreateDriveOnStart { get; init; } = true;
@@ -518,7 +584,7 @@ public sealed class MountManagerTests
             PollInterval = TimeSpan.FromMilliseconds(5),
             DriveReleaseTimeout = DriveReleaseTimeout,
             HealthInterval = TimeSpan.FromHours(1)
-        }, (connection, settings, token) => Configure(connection, settings, token), ShellNotifier);
+        }, (connection, settings, token) => Configure(connection, settings, token), ShellNotifier, DriveIcons);
 
         public IMountProcess Create(ProcessStartInfo startInfo)
         {
@@ -546,6 +612,24 @@ public sealed class MountManagerTests
         {
             foreach (var process in Processes.Where(process => !process.HasExited)) { process.Exit(0); }
             if (Directory.Exists(Root)) { Directory.Delete(Root, true); }
+        }
+    }
+
+    private sealed class FakeDriveIcons : IMountDriveIconService
+    {
+        public List<string> Applied { get; } = [];
+        public List<string> Restored { get; } = [];
+        public Action<string>? OnRestore { get; set; }
+        public Exception? ApplyFailure { get; set; }
+        public IDisposable? Apply(string driveLetter)
+        {
+            if (ApplyFailure is not null) { throw ApplyFailure; }
+            Applied.Add(driveLetter);
+            return new Lease(() => { OnRestore?.Invoke(driveLetter); Restored.Add(driveLetter); });
+        }
+        private sealed class Lease(Action restore) : IDisposable
+        {
+            public void Dispose() => restore();
         }
     }
 

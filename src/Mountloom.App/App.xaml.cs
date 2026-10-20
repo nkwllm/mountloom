@@ -2,6 +2,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using System.Security.Principal;
+using Mountloom.Core.Services;
+using Mountloom.Core.Services.Runtime;
 
 namespace Mountloom.App;
 
@@ -10,12 +12,14 @@ public partial class App : Application
     private Mutex? _instanceMutex;
     private bool _ownsMutex;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
+        var startInTray = StartupRegistrationService.IsStartupLaunch(e.Args);
         if (IsSetupRunning())
         {
-            MessageBox.Show("Mountloom 正在安装或更新，请等待安装完成后再启动。", "Mountloom",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!startInTray)
+                MessageBox.Show("Mountloom 正在安装或更新，请等待安装完成后再启动。", "Mountloom",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
@@ -26,8 +30,9 @@ public partial class App : Application
         catch (AbandonedMutexException) { _ownsMutex = true; }
         if (!_ownsMutex)
         {
-            MessageBox.Show("Mountloom 已在运行。请双击任务栏通知区域中的 Mountloom 图标打开窗口。", "Mountloom",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!startInTray)
+                MessageBox.Show("Mountloom 已在运行。请双击任务栏通知区域中的 Mountloom 图标打开窗口。", "Mountloom",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
@@ -35,6 +40,17 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
+        try { new StartupRegistrationService().UpgradeLegacyRegistration(); }
+        catch (Exception ex) { TryWriteCrashLog(ex); }
+        try { new WindowsMountDriveIconService().RecoverStaleIcons(); }
+        catch (Exception ex) { TryWriteCrashLog(ex); }
+
+        var window = new MainWindow();
+        MainWindow = window;
+        // Never show the window during login startup, including before config is loaded.
+        if (!startInTray) window.Show();
+        await window.InitializeAsync();
     }
 
     internal static bool IsSetupRunning(string mutexName = @"Global\Mountly-Setup")

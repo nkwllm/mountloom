@@ -10,7 +10,7 @@ $app = [IO.Path]::GetFullPath($AppDirectory)
 $rootFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($name in @('Mountloom.App.exe', 'rclone.exe', 'createdump.exe', 'build-manifest.json',
     'Mountloom.App.deps.json', 'Mountloom.App.runtimeconfig.json', 'README.md', 'LICENSE', 'LICENSE.txt',
-    'THIRD-PARTY-NOTICES.md')) { [void]$rootFiles.Add($name) }
+    'THIRD-PARTY-NOTICES.md', 'Mountloom.ico')) { [void]$rootFiles.Add($name) }
 $noticeFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($name in @('third-party/rclone/LICENSE.txt', 'third-party/rclone/README.txt', 'third-party/rclone/git-log.txt',
     'third-party/dotnet/LICENSE.txt', 'third-party/dotnet/ThirdPartyNotices.txt',
@@ -57,7 +57,7 @@ while ($directories.Count -gt 0) {
 
 foreach ($name in @('Mountloom.App.exe', 'Mountloom.App.dll', 'Mountloom.Core.dll', 'Mountloom.App.deps.json',
     'Mountloom.App.runtimeconfig.json', 'hostfxr.dll', 'hostpolicy.dll', 'coreclr.dll', 'PresentationFramework.dll',
-    'rclone.exe', 'build-manifest.json', 'LICENSE', 'third-party/rclone/LICENSE.txt', 'third-party/rclone/README.txt',
+    'rclone.exe', 'Mountloom.ico', 'build-manifest.json', 'LICENSE', 'third-party/rclone/LICENSE.txt', 'third-party/rclone/README.txt',
     'third-party/dotnet/LICENSE.txt', 'third-party/dotnet/ThirdPartyNotices.txt', 'THIRD-PARTY-NOTICES.md',
     'third-party/dotnet/SOURCE.txt',
     'third-party/dotnet/runtime/LICENSE.TXT', 'third-party/dotnet/runtime/THIRD-PARTY-NOTICES.TXT',
@@ -87,6 +87,12 @@ if ($manifest.PSObject.Properties.Name -contains 'applicationSha256') {
         (Get-FileHash -LiteralPath (Join-Path $app 'Mountloom.Core.dll') -Algorithm SHA256).Hash -ne $manifest.coreSha256) {
         throw 'The application files do not match the build manifest.'
     }
+}
+
+# The same icon is embedded in the app and shipped for Explorer's mounted drives.
+$iconHash = (Get-FileHash -LiteralPath (Join-Path $app 'Mountloom.ico') -Algorithm SHA256).Hash
+if (-not $manifest.PSObject.Properties['iconSha256'] -or $iconHash -ne $manifest.iconSha256) {
+    throw 'The mounted drive icon does not match the build manifest.'
 }
 
 # Probe only the already verified binary; never read the user's rclone settings or contact a remote.
